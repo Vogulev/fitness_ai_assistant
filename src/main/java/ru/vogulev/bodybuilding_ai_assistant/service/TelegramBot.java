@@ -15,6 +15,10 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+import ru.vogulev.bodybuilding_ai_assistant.model.User;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Getter
@@ -22,11 +26,13 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 public class TelegramBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
     private final TelegramClient telegramClient;
     private final String botToken;
-    private final Assistant assistant;
+    private final StateMachine stateMachine;
+    private final Map<Long, User> userChoiceMap;
 
-    public TelegramBot(@Value("${BOT_TOKEN}") String botToken, @Autowired Assistant assistant) {
+    public TelegramBot(@Value("${BOT_TOKEN}") String botToken, @Autowired StateMachine stateMachine) {
         this.botToken = botToken;
-        this.assistant = assistant;
+        this.stateMachine = stateMachine;
+        this.userChoiceMap = new HashMap<>();
         telegramClient = new OkHttpTelegramClient(botToken);
     }
 
@@ -37,24 +43,18 @@ public class TelegramBot implements SpringLongPollingBot, LongPollingSingleThrea
 
     @Override
     public void consume(Update update) {
-        // We check if the update has a message and the message has text
         if (update.hasMessage() && update.getMessage().hasText()) {
-            // Set variables
-            String message_text = update.getMessage().getText();
-            long chat_id = update.getMessage().getChatId();
+            var chat_id = update.getMessage().getChatId();
+            var message = stateMachine.eventHandler(chat_id, update.getMessage().getText());
+            sendMessage(message);
+        }
+    }
 
-            String aiAnswer = assistant.chat(message_text);
-
-            SendMessage message = SendMessage // Create a message object
-                    .builder()
-                    .chatId(chat_id)
-                    .text(aiAnswer)
-                    .build();
-            try {
-                telegramClient.execute(message); // Sending our message object to user
-            } catch (TelegramApiException e) {
-                log.error(e.getMessage());
-            }
+    public void sendMessage(SendMessage message) {
+        try {
+            telegramClient.execute(message);
+        } catch (TelegramApiException e) {
+            log.error(e.getMessage());
         }
     }
 
